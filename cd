@@ -1,0 +1,302 @@
+#ifndef BYTE_H
+#define BYTE_H
+
+#include <stdio.h>
+#include <stdint.h>
+
+#define FLAG         0x7E
+#define ESCAPE       0x7D
+#define ADDRESS      0xFF
+#define CONTROL      0x03
+
+void print_byte_binary(uint8_t byte);
+void write_byte_binary(FILE *out, uint8_t byte);
+void do_stuffing(char *text, int is_raw_binary);
+void do_destuffing(void);
+
+#endif
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#include "byte.h"
+
+void print_byte_binary(uint8_t byte) {
+    int b;
+    for (b = 7; b >= 0; b--) {
+        printf("%d", (byte >> b) & 1);
+    }
+}
+
+void write_byte_binary(FILE *out, uint8_t byte) {
+    int b;
+    for (b = 7; b >= 0; b--) {
+        fprintf(out, "%d", (byte >> b) & 1);
+    }
+}
+
+void do_stuffing(char *text, int is_raw_binary) {
+    char bits[4000] = {0};
+    uint8_t raw_bytes[2000] = {0};
+    int raw_bytes_count = 0;
+    FILE *out;
+    int max_payload_bits = 32;
+    int max_payload_bytes = 4;
+    int chunk_start = 0;
+    int i;
+    int b;
+
+    if (is_raw_binary == 1) {
+        strcpy(bits, text);
+        int bit_len = strlen(bits);
+
+        for (i = 0; i < bit_len; i += 8) {
+            uint8_t temp_byte = 0;
+            for (b = 0; b < 8; b++) {
+                if (i + b < bit_len) {
+                    temp_byte = (temp_byte << 1) | (bits[i + b] - '0');
+                } else {
+                    temp_byte = (temp_byte << 1);
+                }
+            }
+            raw_bytes[raw_bytes_count++] = temp_byte;
+        }
+    } else {
+        for (i = 0; text[i] != '\0'; i++) {
+            raw_bytes[raw_bytes_count++] = (uint8_t)text[i];
+        }
+    }
+
+    printf("Total Binary Stream: ");
+    for(i = 0; i < raw_bytes_count; i++) {
+        print_byte_binary(raw_bytes[i]);
+        if (i < raw_bytes_count - 1) printf(" ");
+    }
+    printf("\n");
+
+    out = fopen("intermediate.txt", "w");
+    if (out == NULL) {
+        printf("Error: Could not save output file!\n");
+        return;
+    }
+
+    printf("Enter the framing size in bits (e.g., 16 or 32): ");
+    if (scanf("%d", &max_payload_bits) != 1) {
+        max_payload_bits = 32;
+    }
+
+    max_payload_bytes = max_payload_bits / 8;
+    if (max_payload_bytes < 1) {
+        max_payload_bytes = 1;
+    }
+
+    while (chunk_start < raw_bytes_count) {
+        uint8_t frame_data[4000] = {0};
+        int stuffed_bytes_len = 0;
+        int current_chunk_bytes = 0;
+
+        printf("\nSplitted data: ");
+        for (i = 0; i < max_payload_bytes && (chunk_start + i) < raw_bytes_count; i++) {
+            uint8_t current_byte = raw_bytes[chunk_start + i];
+            print_byte_binary(current_byte);
+            printf(" ");
+            current_chunk_bytes++;
+
+            if (current_byte == FLAG || current_byte == ESCAPE) {
+                frame_data[stuffed_bytes_len++] = ESCAPE;
+                frame_data[stuffed_bytes_len++] = current_byte;
+            } else {
+                frame_data[stuffed_bytes_len++] = current_byte;
+            }
+        }
+        printf("---\n");
+        chunk_start += current_chunk_bytes;
+
+        printf("Byte stuffed : ");
+        for (i = 0; i < stuffed_bytes_len; i++) {
+            print_byte_binary(frame_data[i]);
+            if (i + 1 < stuffed_bytes_len) printf(" ");
+        }
+        printf("\n");
+
+        printf("Framing stored to file: ");
+
+        write_byte_binary(out, FLAG);
+        write_byte_binary(out, ADDRESS);
+        write_byte_binary(out, CONTROL);
+
+        for (i = 0; i < stuffed_bytes_len; i++) {
+            write_byte_binary(out, frame_data[i]);
+            print_byte_binary(frame_data[i]);
+        }
+
+        for (i = 0; i < 4; i++) {
+            write_byte_binary(out, 0x00);
+        }
+
+        write_byte_binary(out, FLAG);
+        printf("\n");
+    }
+
+    fprintf(out, "\n");
+    fclose(out);
+    printf("\nSaved data frames to 'intermediate.txt'\n");
+}
+
+void do_destuffing(void) {
+    FILE *fp;
+    static char line[16000];
+    uint8_t clean_bytes[4000] = {0};
+    int clean_bytes_count = 0;
+    int current_pos = 0;
+    int i;
+    int b;
+
+    fp = fopen("intermediate.txt", "r");
+    if (fp == NULL) {
+        printf("Could not open intermediate.txt\n");
+        return;
+    }
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        int line_len = strlen(line);
+        while (line_len > 0 && (line[line_len - 1] == '\n' || line[line_len - 1] == '\r')) {
+            line[line_len - 1] = '\0';
+            line_len--;
+        }
+
+        current_pos = 0;
+        while (current_pos <= line_len - 8) {
+            if (strncmp(&line[current_pos], "01111110", 8) != 0) {
+                current_pos++;
+                continue;
+            }
+
+            int start_pos = current_pos;
+            int end_pos = -1;
+            int scan_pos = start_pos + 24;
+
+            /* Parse the file payload byte-by-byte to find the true framing end flag boundary */
+            while (scan_pos <= line_len - 8) {
+                if (strncmp(&line[scan_pos], "01111110", 8) == 0) {
+                    end_pos = scan_pos;
+                    break;
+                }
+
+                /* Convert current group to a numerical byte value */
+                uint8_t eval_byte = 0;
+                for (b = 0; b < 8; b++) {
+                    eval_byte = (eval_byte << 1) | (line[scan_pos + b] - '0');
+                }
+
+                if (eval_byte == ESCAPE) {
+                    scan_pos += 16; /* Skip past escape signature + data payload sequence safely */
+                } else {
+                    scan_pos += 8;  /* Advance to the next byte boundary */
+                }
+            }
+
+            if (end_pos == -1) {
+                current_pos += 8;
+                continue;
+            }
+
+            int data_start = start_pos + 24;
+            int data_end = end_pos - 32;
+
+            if (data_start < data_end) {
+                uint8_t raw_received_bytes[2000] = {0};
+                int raw_bytes_count = 0;
+
+                printf("\n--- Receiver receiving data ---\n");
+                printf("Isolating data from frames: ");
+                for (i = data_start; i < data_end; i++) {
+                    printf("%c", line[i]);
+                    if ((i - data_start + 1) % 8 == 0 && (i + 1) < data_end) printf(" ");
+                }
+                printf("\n");
+
+                for (i = data_start; i < data_end; i += 8) {
+                    uint8_t temp_byte = 0;
+                    for (b = 0; b < 8; b++) {
+                        temp_byte = (temp_byte << 1) | (line[i + b] - '0');
+                    }
+                    raw_received_bytes[raw_bytes_count++] = temp_byte;
+                }
+
+                printf("De-stuffed data: ");
+                for (i = 0; i < raw_bytes_count; i++) {
+                    if (raw_received_bytes[i] == ESCAPE) {
+                        i++;
+                        clean_bytes[clean_bytes_count++] = raw_received_bytes[i];
+                    } else {
+                        clean_bytes[clean_bytes_count++] = raw_received_bytes[i];
+                    }
+                    print_byte_binary(clean_bytes[clean_bytes_count - 1]);
+                    printf(" ");
+                }
+                printf("\n");
+            }
+
+            current_pos = end_pos + 8;
+        }
+    }
+    fclose(fp);
+
+    printf("\nFinal received data (Binary): ");
+    for(i = 0; i < clean_bytes_count; i++) {
+        print_byte_binary(clean_bytes[i]);
+    }
+    printf("\n");
+
+    printf("Decoded text: ");
+    for (i = 0; i < clean_bytes_count; i++) {
+        char character = (char)clean_bytes[i];
+        if (character >= 32 && character <= 126) {
+            printf("%c", character);
+        } else {
+            printf("[0x%02X]", (unsigned char)character);
+        }
+    }
+    printf("\n");
+}
+#include <stdio.h>
+#include <string.h>
+#include "byte.h"
+
+int main(void) {
+    int role = 0;
+    int input_mode = 0;
+    char payload[2000] = {0};
+
+    printf("====================================\n");
+    printf("1. Sender (Stuffing & Framing)\n");
+    printf("2. Receiver (File Test & Destuffing)\n");
+    printf("Select Role: ");
+    if (scanf("%d", &role) != 1) return 1;
+
+    if (role == 1) {
+        printf("\n--- Sender Options ---\n");
+        printf("1. Convert Console Text String to Frame\n");
+        printf("2. Process Raw Bit String Stream directly\n");
+        printf("Select Input Mode: ");
+        if (scanf("%d", &input_mode) != 1) return 1;
+
+        printf("Enter source payload: ");
+        getchar();
+        if (fgets(payload, sizeof(payload), stdin) != NULL) {
+            int len = strlen(payload);
+            while (len > 0 && (payload[len - 1] == '\n' || payload[len - 1] == '\r')) {
+                payload[len - 1] = '\0';
+                len--;
+            }
+            do_stuffing(payload, (input_mode == 2) ? 1 : 0);
+        }
+    } else if (role == 2) {
+        printf("\n[Receiver] Pulling encoded payload stream from 'intermediate.txt'...\n");
+        do_destuffing();
+    } else {
+        printf("Invalid choice!\n");
+    }
+
+    return 0;
+}
