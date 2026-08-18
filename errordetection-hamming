@@ -1,0 +1,171 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define MAX_BITS 256
+#define FILE_NAME "hamming_dp_storage.txt"
+int getParityCountDP(int dataLen);
+void encodeDynamicHamming(const char *data, char *code);
+int decodeDynamicHamming(char *code, char *data);
+#include "head.h"
+
+static int pow2_dp[32] = {0};
+
+static void initPow2DP() {
+    int i;
+    if (pow2_dp[0] == 0) {
+        pow2_dp[0] = 1;
+        for (i = 1; i < 32; i++) {
+            pow2_dp[i] = pow2_dp[i - 1] << 1;
+        }
+    }
+}
+
+int getParityCountDP(int dataLen) {
+    initPow2DP();
+    int p = 0;
+    while (pow2_dp[p] < (dataLen + p + 1)) {
+        p++;
+    }
+    return p;
+}
+
+void encodeDynamicHamming(const char *data, char *code) {
+    initPow2DP();
+    int dataLen = strlen(data);
+    int p = getParityCountDP(dataLen);
+    int totalLen = dataLen + p;
+
+    int i, j, dataIdx = 0, pIdx = 0;
+    for (i = 1; i <= totalLen; i++) {
+        if (pIdx < p && i == pow2_dp[pIdx]) {
+            code[i] = '0';
+            pIdx++;
+        } else {
+            code[i] = data[dataIdx++];
+        }
+    }
+
+    for (i = 0; i < p; i++) {
+        int pPos = pow2_dp[i];
+        int parityVal = 0;
+
+        for (j = 1; j <= totalLen; j++) {
+            if (j & pPos) {
+                parityVal ^= (code[j] - '0');
+            }
+        }
+        code[pPos] = parityVal + '0';
+    }
+
+    int globalParity = 0;
+    for (i = 1; i <= totalLen; i++) {
+        globalParity ^= (code[i] - '0');
+    }
+    code[0] = globalParity + '0';
+    code[totalLen + 1] = '\0';
+}
+
+int decodeDynamicHamming(char *code, char *data) {
+    initPow2DP();
+    int fullLen = strlen(code);
+    int totalLen = fullLen - 1;
+
+    int p = 0;
+    while (pow2_dp[p] <= totalLen) p++;
+
+    int i, j, errorPos = 0;
+
+    for (i = 0; i < p; i++) {
+        int pPos = pow2_dp[i];
+        int parityVal = 0;
+
+        for (j = 1; j <= totalLen; j++) {
+            if (j & pPos) {
+                parityVal ^= (code[j] - '0');
+            }
+        }
+        if (parityVal != 0) {
+            errorPos += pPos;
+        }
+    }
+
+    int globalParityCalculated = 0;
+    for (i = 1; i <= totalLen; i++) {
+        globalParityCalculated ^= (code[i] - '0');
+    }
+
+    int globalParityReceived = code[0] - '0';
+    int globalParityError = (globalParityCalculated != globalParityReceived);
+
+    if (errorPos != 0 && globalParityError) {
+        if (errorPos <= totalLen) {
+            code[errorPos] = (code[errorPos] == '0') ? '1' : '0';
+        }
+    } else if (errorPos != 0 && !globalParityError) {
+        return -2;
+    }
+
+    int dataIdx = 0, pIdx = 0;
+    for (i = 1; i <= totalLen; i++) {
+        if (pIdx < p && i == pow2_dp[pIdx]) {
+            pIdx++;
+        } else {
+            data[dataIdx++] = code[i];
+        }
+    }
+    data[dataIdx] = '\0';
+
+    return errorPos;
+}
+#include "head.h"
+
+int main() {
+    char dataInput[MAX_BITS], codeStorage[MAX_BITS], extractedData[MAX_BITS];
+    int choice;
+    FILE *fp;
+
+    printf("1. Sender (Encode Variable Length Data)\n2. Receiver (Read, Correct & Decode)\nChoice: ");
+    scanf("%d", &choice);
+
+    if (choice == 1) {
+        printf("Enter Binary Data (Any Length): ");
+        scanf("%s", dataInput);
+
+        encodeDynamicHamming(dataInput, codeStorage);
+
+        printf("Original Data Length: %lu bits\n", strlen(dataInput));
+        printf("Calculated Parity Bits: %d bits\n", getParityCountDP(strlen(dataInput)));
+        printf("Encoded Hamming Codeword: %s\n", codeStorage);
+
+        fp = fopen(FILE_NAME, "w");
+        if (fp) {
+            fprintf(fp, "%s", codeStorage);
+            fclose(fp);
+            printf("Saved codeword to '%s'\n", FILE_NAME);
+        }
+
+    } else if (choice == 2) {
+        fp = fopen(FILE_NAME, "r");
+        if (!fp) {
+            printf("File error! Run Sender first.\n");
+            return 1;
+        }
+        fscanf(fp, "%s", codeStorage);
+        fclose(fp);
+
+        printf("Read Received Codeword: %s\n", codeStorage);
+
+        int errorPos = decodeDynamicHamming(codeStorage, extractedData);
+
+        if (errorPos == 0) {
+            printf("RESULT: NO ERROR DETECTED\n");
+        } else {
+            printf("RESULT: ERROR DETECTED at bit position %d!\n", errorPos);
+            printf("Corrected Codeword: %s\n", codeStorage);
+        }
+
+        printf("Extracted Original Data: %s\n", extractedData);
+    }
+
+    return 0;
+}
