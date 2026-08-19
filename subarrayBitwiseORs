@@ -1,0 +1,86 @@
+#include <stdlib.h>
+#include <stdbool.h>
+
+#define HASH_SIZE 1000003 
+
+typedef struct Node {
+    int val;
+    struct Node* next;
+} Node;
+
+void insert(Node** hashTable, int val, int* uniqueCount) {
+    int index = abs(val) % HASH_SIZE;
+    Node* curr = hashTable[index];
+    
+    // Check if value already exists
+    while (curr != NULL) {
+        if (curr->val == val) return;
+        curr = curr->next;
+    }
+    
+    // Insert new value
+    Node* newNode = (Node*)malloc(sizeof(Node));
+    newNode->val = val;
+    newNode->next = hashTable[index];
+    hashTable[index] = newNode;
+    (*uniqueCount)++;
+}
+
+int subarrayBitwiseORs(int* arr, int arrSize) {
+    if (arrSize == 0) return 0;
+
+    // Custom Hash Table to track global unique counts
+    Node** hashTable = (Node**)calloc(HASH_SIZE, sizeof(Node*));
+    int uniqueCount = 0;
+
+    // Rolling DP frontiers: max 32 unique values can end at any position
+    int prev_or[33]; 
+    int prev_size = 0;
+
+    for (int i = 0; i < arrSize; i++) {
+        int curr_or[33];
+        int curr_size = 0;
+
+        // 1. Single element subarray starting and ending at i
+        curr_or[curr_size++] = arr[i];
+        insert(hashTable, arr[i], &uniqueCount);
+
+        // 2. Extend previous subarrays with the current element
+        for (int j = 0; j < prev_size; j++) {
+            int next_val = prev_or[j] | arr[i];
+            
+            // Check for local duplicates to keep curr_size <= 32
+            bool duplicate = false;
+            for (int k = 0; k < curr_size; k++) {
+                if (curr_or[k] == next_val) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            
+            if (!duplicate) {
+                curr_or[curr_size++] = next_val;
+                insert(hashTable, next_val, &uniqueCount);
+            }
+        }
+
+        // 3. Move current frontier to previous frontier for the next loop index
+        prev_size = curr_size;
+        for (int j = 0; j < curr_size; j++) {
+            prev_or[j] = curr_or[j];
+        }
+    }
+
+    // Free allocated memory for the hash map
+    for (int i = 0; i < HASH_SIZE; i++) {
+        Node* curr = hashTable[i];
+        while (curr != NULL) {
+            Node* temp = curr;
+            curr = curr->next;
+            free(temp);
+        }
+    }
+    free(hashTable);
+
+    return uniqueCount;
+}
