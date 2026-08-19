@@ -1,0 +1,63 @@
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct {
+    int children[2];
+} TrieNode;
+
+TrieNode pool[6000005];
+int nodeCount;
+
+int createNode() {
+    pool[nodeCount].children[0] = -1;
+    pool[nodeCount].children[1] = -1;
+    return nodeCount++;
+}
+
+void insert(int num) {
+    int curr = 0;
+    for (int i = 30; i >= 0; i--) {
+        int bit = (num >> i) & 1;
+        if (pool[curr].children[bit] == -1) {
+            pool[curr].children[bit] = createNode();
+        }
+        curr = pool[curr].children[bit];
+    }
+}
+
+int getMaxXor(int num) {
+    int curr = 0;
+    int maxXor = 0;
+    for (int i = 30; i >= 0; i--) {
+        int bit = (num >> i) & 1;
+        int toggledBit = 1 - bit;
+        if (pool[curr].children[toggledBit] != -1) {
+            maxXor |= (1 << i);
+            curr = pool[curr].children[toggledBit];
+        } else {
+            curr = pool[curr].children[bit];
+        }
+    }
+    return maxXor;
+}
+
+int findMaximumXOR(int* nums, int numsSize) {
+    if (numsSize < 2) return 0;
+    
+    nodeCount = 0;
+    createNode(); 
+    
+    for (int i = 0; i < numsSize; i++) {
+        insert(nums[i]);
+    }
+    
+    int globalMax = 0;
+    for (int i = 0; i < numsSize; i++) {
+        int currentMax = getMaxXor(nums[i]);
+        if (currentMax > globalMax) {
+            globalMax = currentMax;
+        }
+    }
+    
+    return globalMax;
+}
