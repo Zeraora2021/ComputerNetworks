@@ -1,0 +1,96 @@
+struct Cell {
+    int r;
+    int c;
+    int effort;
+};
+
+int minimumEffortPath(int** heights, int heightsSize, int* heightsColSize) {
+    int rows = heightsSize;
+    int cols = heightsColSize[0];
+    
+    int** effort = (int**)malloc(rows * sizeof(int*));
+    for (int i = 0; i < rows; i++) {
+        effort[i] = (int*)malloc(cols * sizeof(int));
+        for (int j = 0; j < cols; j++) {
+            effort[i][j] = 1000001; 
+        }
+    }
+    effort[0][0] = 0;
+
+    struct Cell* heap = (struct Cell*)malloc(rows * cols * sizeof(struct Cell));
+    int heapSize = 0;
+
+    heap[0].r = 0;
+    heap[0].c = 0;
+    heap[0].effort = 0;
+    heapSize++;
+
+    int dr[] = {-1, 1, 0, 0};
+    int dc[] = {0, 0, -1, 1};
+
+    while (heapSize > 0) {
+        struct Cell curr = heap[0];
+        heap[0] = heap[--heapSize];
+        int idx = 0;
+        while (2 * idx + 1 < heapSize) {
+            int left = 2 * idx + 1;
+            int right = 2 * idx + 2;
+            int smallest = left;
+            if (right < heapSize && heap[right].effort < heap[left].effort) {
+                smallest = right;
+            }
+            if (heap[idx].effort <= heap[smallest].effort) break;
+            struct Cell temp = heap[idx];
+            heap[idx] = heap[smallest];
+            heap[smallest] = temp;
+            idx = smallest;
+        }
+
+        if (curr.r == rows - 1 && curr.c == cols - 1) {
+            int ans = curr.effort;
+            for (int i = 0; i < rows; i++) free(effort[i]);
+            free(effort);
+            free(heap);
+            return ans;
+        }
+
+        if (curr.effort > effort[curr.r][curr.c]) continue;
+
+        for (int i = 0; i < 4; i++) {
+            int nr = curr.r + dr[i];
+            int nc = curr.c + dc[i];
+
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+                int v1 = heights[curr.r][curr.c];
+                int v2 = heights[nr][nc];
+                int diff = v1 - v2;
+                if (diff < 0) diff = -diff;
+                
+                int nextEffort = curr.effort > diff ? curr.effort : diff;
+
+                if (nextEffort < effort[nr][nc]) {
+                    effort[nr][nc] = nextEffort;
+                    
+                    heap[heapSize].r = nr;
+                    heap[heapSize].c = nc;
+                    heap[heapSize].effort = nextEffort;
+                    
+                    int cIdx = heapSize++;
+                    while (cIdx > 0) {
+                        int pIdx = (cIdx - 1) / 2;
+                        if (heap[pIdx].effort <= heap[cIdx].effort) break;
+                        struct Cell temp = heap[pIdx];
+                        heap[pIdx] = heap[cIdx];
+                        heap[cIdx] = temp;
+                        cIdx = pIdx;
+                    }
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < rows; i++) free(effort[i]);
+    free(effort);
+    free(heap);
+    return 0;
+}
