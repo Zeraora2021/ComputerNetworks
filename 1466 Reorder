@@ -1,0 +1,65 @@
+struct Edge {
+    int to;
+    int original; // 1 if original edge (u -> v), 0 if reversed (v -> u)
+    struct Edge* next;
+};
+
+int minReorder(int n, int** connections, int connectionsSize, int* connectionsColSize) {
+    struct Edge** graph = (struct Edge**)calloc(n, sizeof(struct Edge*));
+    
+    for (int i = 0; i < connectionsSize; i++) {
+        int u = connections[i][0];
+        int v = connections[i][1];
+        
+        // Add original directional edge (u -> v) with cost/marker 1
+        struct Edge* edge1 = (struct Edge*)malloc(sizeof(struct Edge));
+        edge1->to = v;
+        edge1->original = 1;
+        edge1->next = graph[u];
+        graph[u] = edge1;
+        
+        // Add artificial reverse edge (v -> u) with cost/marker 0
+        struct Edge* edge2 = (struct Edge*)malloc(sizeof(struct Edge));
+        edge2->to = u;
+        edge2->original = 0;
+        edge2->next = graph[v];
+        graph[v] = edge2;
+    }
+    
+    int* queue = (int*)malloc(n * sizeof(int));
+    char* visited = (char*)calloc(n, sizeof(char));
+    int head = 0, tail = 0;
+    
+    queue[tail++] = 0;
+    visited[0] = 1;
+    
+    int changes = 0;
+    
+    while (head < tail) {
+        int curr = queue[head++];
+        
+        struct Edge* edge = graph[curr];
+        while (edge != NULL) {
+            if (!visited[edge->to]) {
+                visited[edge->to] = 1;
+                changes += edge->original; // If it points away from root (0), we must flip it
+                queue[tail++] = edge->to;
+            }
+            edge = edge->next;
+        }
+    }
+    
+    for (int i = 0; i < n; i++) {
+        struct Edge* edge = graph[i];
+        while (edge != NULL) {
+            struct Edge* temp = edge;
+            edge = edge->next;
+            free(temp);
+        }
+    }
+    free(graph);
+    free(queue);
+    free(visited);
+    
+    return changes;
+}
