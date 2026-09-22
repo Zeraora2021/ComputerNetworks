@@ -1,0 +1,75 @@
+struct Edge {
+    int to;
+    int weight;
+    struct Edge* next;
+};
+
+int networkDelayTime(int** times, int timesSize, int* timesColSize, int n, int k) {
+    struct Edge** graph = (struct Edge**)calloc((n + 1), sizeof(struct Edge*));
+    for (int i = 0; i < timesSize; i++) {
+        int u = times[i][0];
+        int v = times[i][1];
+        int w = times[i][2];
+        struct Edge* edge = (struct Edge*)malloc(sizeof(struct Edge));
+        edge->to = v;
+        edge->weight = w;
+        edge->next = graph[u];
+        graph[u] = edge;
+    }
+
+    int* dist = (int*)malloc((n + 1) * sizeof(int));
+    char* visited = (char*)calloc((n + 1), sizeof(char));
+    for (int i = 1; i <= n; i++) {
+        dist[i] = 100000000;
+    }
+    dist[k] = 0;
+
+    for (int count = 0; count < n; count++) {
+        int u = -1;
+        int minDist = 100000000;
+        for (int i = 1; i <= n; i++) {
+            if (!visited[i] && dist[i] < minDist) {
+                minDist = dist[i];
+                u = i;
+            }
+        }
+
+        if (u == -1) break;
+        visited[u] = 1;
+
+        struct Edge* edge = graph[u];
+        while (edge != NULL) {
+            int v = edge->to;
+            int w = edge->weight;
+            if (!visited[v] && dist[u] + w < dist[v]) {
+                dist[v] = dist[u] + w;
+            }
+            edge = edge->next;
+        }
+    }
+
+    int maxDelay = 0;
+    for (int i = 1; i <= n; i++) {
+        if (dist[i] == 100000000) {
+            maxDelay = -1;
+            break;
+        }
+        if (dist[i] > maxDelay) {
+            maxDelay = dist[i];
+        }
+    }
+
+    for (int i = 1; i <= n; i++) {
+        struct Edge* edge = graph[i];
+        while (edge != NULL) {
+            struct Edge* temp = edge;
+            edge = edge->next;
+            free(temp);
+        }
+    }
+    free(graph);
+    free(dist);
+    free(visited);
+
+    return maxDelay;
+}
